@@ -179,11 +179,46 @@ const OrGate = new Gate("OR", ["A", "B"], ["X"], ([a, b])=>([a || b]), {'color':
 const AndGate = new Gate("AND", ["A", "B"], ["X"], ([a, b])=>([a && b]), {'color': '#eb4034'});
 const NotGate = new Gate("NOT", ["A"], ["X"], ([a])=>([!a]), {'color': '#faae3c'});
 const XorGate = new Gate("XOR", ["A", "B"], ["X"], ([a, b])=>([(a || b) && !(a && b)]), {'color': '#8e3cfa'});
+
+const gateTypes = new Map();
+
+function addGate(gate) {
+  gateTypes.set(gate.name, gate);
+  let elem = document.createElement('button');
+  elem.classList.add('gate-button');
+  elem.addEventListener('click', ()=>{
+    currentGates.add(new RenderingGate(gate, new Vector(canvas.width/2, canvas.height/2)))
+  })
+  elem.style.backgroundColor = gate.data.get('color');
+  elem.innerText = gate.name;
+  elements.gateList.append(elem)
+}
+
+addGate(OrGate);
+addGate(NotGate);
+addGate(AndGate);
+addGate(XorGate);
+
+
 let mousePos = new Vector();
 let selection = new Set();
 let dragging = false;
 let currentLink = null;
 let lastClickToggled = false;
+
+elements.createGate.addEventListener('click', (e)=>{
+  if (elements.gateName.value.length < 3) {
+    console.error("Name must be larger than 3 characters.");
+  } else {
+    const gateName = elements.gateName.value;
+    const gate = Gate.from(currentGates, globalIns, globalOuts, {color: elements.gateColor.value});
+    currentGates.clear();
+    globalIns.length = 0;
+    globalOuts.length = 0;
+    addGate(gate);
+  }
+})
+
 canvas.addEventListener('contextmenu', e=>e.preventDefault())
 canvas.addEventListener('mousedown', e=>{
   mousePos.set(e.offsetX, e.offsetY);
@@ -284,6 +319,19 @@ canvas.addEventListener('mousedown', e=>{
     }
   }
 }, true)
+
+window.addEventListener('keydown', (e)=>{
+  console.log(e);
+  if (e.key == 'Delete') {
+    for (let sel of selection) {
+      for (let input of sel.gate.inputs) if (input) input.node.outputs.delete(input);
+      for (let output of sel.gate.outputs) output.to.inputs[output.inIndex] = null;
+      currentGates.delete(sel.gate);
+    }
+    selection.clear();
+  }
+})
+
 const IO_INPUT = Symbol('IO_INPUT');
 const IO_OUTPUT = Symbol('IO_OUTPUT');
 const globalIns = [];

@@ -69,7 +69,7 @@ export class Gate {
       if (!context.subContexts.has(node)) context.subContexts.set(node, new ComputeContext())
       let subCtx = context.subContexts.get(node);
       if (subCtx.cached.has(node)) {
-        return context.subContexts.get(node)..outputs;
+        return context.subContexts.get(node).outputs;
       } else {
         for (let output of outputs) {
           res[outputs.index] = output.inputs[0]?output.inputs[0].node.compute(node):false
@@ -87,7 +87,8 @@ export class Gate {
       let treeInputs = new Set();
       let connectedTrees = new Set();
       if (output && output.inputs[0]) {
-        function walk(node, stack) {
+        let stack = new Stack();
+        function walk(node) {
           stack.push(node);
           treeNodes.add(node)
           for (let input of current.inputs) {
