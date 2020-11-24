@@ -37,16 +37,18 @@ export class Gate {
     this.data = new Map(Object.entries(data))
   }
 
-  compute(inputs) {
-    return this.mapper(inputs);
+  compute(inputs, context, node, prevContext) {
+    return this.mapper(inputs, context, node, prevContext);
   }
 
   static IOSorter(a, b) {return a.index - b.index};
 
   static graphGate(name, inputs, outputs, data) {
     let gates = new Set();
+    const usedGates = new Set();
     function walk(gate) {
       gates.add(gate);
+      usedGates.add(gate.gate);
       for (let input of gate.inputs) {
         if (input && input.node) {
           if (!gates.has(input.node)) {
@@ -59,7 +61,7 @@ export class Gate {
       walk(output);
     }
     let clones = GateNode.clone(gates, true);
-    return new Gate(name, inputs.map(input=>input.name), outputs.map(output=>output.name), Gate.createGateMapper(clones.gates, clones.inputs, clones.outputs), data)
+    return new Gate(name, inputs.map(input=>input.name), outputs.map(output=>output.name), Gate.createGateMapper(clones.gates, clones.inputs, clones.outputs), {...data, internals: clones, dependencies: usedGates, CIC: true})
   }
 
   static createGateMapper(gates, inputs, outputs) {
@@ -72,9 +74,10 @@ export class Gate {
         return context.subContexts.get(node).outputs;
       } else {
         for (let output of outputs) {
-          res[outputs.index] = output.inputs[0]?output.inputs[0].node.compute(node):false
+          res[output.index] = output.inputs[0]?output.inputs[0].node.compute(context.subContexts.get(node), prevContext.subContexts.get(node))[output.inputs[0].index]:false
         }
       }
+      return res;
     }
   }
 
@@ -82,6 +85,7 @@ export class Gate {
     let walked = new Map();
     let toWalk = new Stack();
     let trees = new Set();
+    let usedGates = new Set();
     for (let output of outputs) {
       let treeNodes = new Set();
       let treeInputs = new Set();
@@ -90,23 +94,25 @@ export class Gate {
         let stack = new Stack();
         function walk(node) {
           stack.push(node);
-          treeNodes.add(node)
-          for (let input of current.inputs) {
+          treeNodes.add(node);
+          usedGates.add(node.gate);
+          for (let input of node.inputs) {
             if (input && !(input.node instanceof InputNode)) {
-              if (stack.has(input.node)) {
-                return Gate.graphGate(name, inputs, outputs, data)
+              if (stack.has(input.node) || input.node.gate.data.has('CIC')) {
+                return false;
               } else if (walked.has(input.node)) {
                 connectedTrees.add(walked.get(input.node));
               } else {
-                walk(input.node)
+                if (!walk(input.node)) return false;
               }
             } else if (input) {
               treeInputs.add(input.node)
             }
           }
           stack.pop();
+          return true;
         }
-        walk(output.inputs[0].node);
+        if (!walk(output.inputs[0].node)) return Gate.graphGate(name, inputs, outputs, data)
         let treeOutputs = new Set([output]);
         for (let other of connectedTrees) {
           for (let output of other.outputs) treeOutputs.add(output);
@@ -134,7 +140,7 @@ export class Gate {
         for (let [j, input] of tree.inputs.entries()) {
           input.set((i & (1<<j)) >= 1);
         }
-        let ctx = new ComputeContext(inputValues);
+        let ctx = new ComputeContext();
         mapping.set(i, tree.outputs.map(output=>output.inputs[0].node?(output.inputs[0].node.compute(ctx)[output.inputs[0].index]):false))
       }
       let table = new GateTable(tree, mapping)
@@ -150,13 +156,14 @@ export class Gate {
       inputs.map(input=>input.name),
       outputs.map(output=>output.name),
       (inputValues)=>{
-        let cache = new Map()
+        let res = outputs.map(_=>false)
         for (let table of tables) {
-          cache.set(table, table.compute(inputValues));
+          let outs = table.compute(inputValues);
+          for (let output of table.tree.outputs) res[output.index] = outs[output.tableIndex];
         }
-        return outputs.map(output=>output.table?cache.get(output.table)[output.tableIndex]:false)
+        return res;
       },
-      data
+      {...data, dependencies: usedGates, internals: GateNode.clone([...walked.keys(), ...inputs, ...outputs], true)}
     )
   }
 }
@@ -174,7 +181,6 @@ export class GateTable {
   compute(inputs) {
     return Array.from(this.mapping.get(this.tree.inputs.reduce((o, input, i)=>{
       o |= (inputs[input.index]|0) << i;
-      console.log(toBin(o));
       return o;
     }, 0)))
   }
@@ -201,6 +207,10 @@ export class ComputeContext {
   cache(state) {
     this.cached.set(state.node, state);
     return state;
+  }
+
+  getLinkState(link) {
+    return link&&link.node&&this.cached.has(link.node)&&this.cached.get(link.node).outputs[link.index]
   }
 }
 
@@ -259,13 +269,18 @@ export class GateNode {
               return (prevContext&&prevContext.cached.has(input.node)?prevContext.cached.get(input.node).outputs[input.index]:false);
             } else return input.node.compute(context, prevContext)[input.index];
           } else return false;
-        })
+        }),
+        context, this, prevContext
       );
       let state = new GateState(this, outputs)
       res = context.cache(state).outputs;
     }
     context.processing.pop();
     return res;
+  }
+
+  serialise() {
+    return {gate: this.gate.name};
   }
 
   copy() {
@@ -322,6 +337,10 @@ export class InputNode extends GateNode {
   copy() {
     return new InputNode(this.name, this.index)
   }
+
+  serialise() {
+    return {...super.serialise(), name: this.name}
+  }
 }
 
 export class OutputNode extends GateNode {
@@ -338,5 +357,9 @@ export class OutputNode extends GateNode {
 
   copy() {
     return new OutputNode(this.name, this.index, [null])
+  }
+
+  serialise() {
+    return {...super.serialise(), name: this.name}
   }
 }

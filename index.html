@@ -6,15 +6,15 @@
     <link rel="stylesheet" href="style.css">
   </head>
   <body>
-    <div id="gate-settings"><input type="text" id="gate-name" value=""><input type="color" id="gate-color"></div>
+    <div id="gate-settings"><input type="text" id="gate-name" value=""><span id="gate-color-wrapper"><input type="color" id="gate-color"></span><button type="button" id="save">SAVE</button></div>
     <canvas id="canvas"></canvas>
     <div id="gate-list">
-      <button type="button" id="create-gate">CREATE</button>
+      <button type="button" class="gate-button" id="create-gate">CREATE</button>
     </div>
     <div class="overlay" id="new-IO-dialog">
       <div class="overlay-content">
         <p>Enter the name for the new IO pin</p>
-        <form id="new-IO-form"><input type="text" id="new-IO-name" value=""></form>
+        <form id="new-IO-form"><input type="text" id="new-IO-name" value="" focus=""></form>
       </div>
     </div>
     <script src="index.mjs" charset="utf-8" type="module"></script>
